@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crown Commercial Service - Document Formatter</title>
+<style>
+
+        body {
+
+            font-family: Arial, sans-serif;
+
+            margin: 0;
+
+            padding: 0;
+
+            background-color: #f4f4f4;
+
+        }
+
+        header {
+
+            background-color: #b30000;
+
+            color: white;
+
+            padding: 20px 0;
+
+            text-align: center;
+
+            font-size: 28px;
+
+            font-weight: bold;
+
+        }
+
+        .container {
+
+            max-width: 500px;
+
+            margin: 40px auto;
+
+            padding: 30px;
+
+            background-color: white;
+
+            border-radius: 10px;
+
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+
+            text-align: center;
+
+        }
+
+        input[type="file"] {
+
+            margin: 15px 0;
+
+        }
+
+        button {
+
+            padding: 10px 25px;
+
+            background-color: #007BFF;
+
+            color: white;
+
+            border: none;
+
+            border-radius: 5px;
+
+            cursor: pointer;
+
+            margin-top: 10px;
+
+        }
+
+        button:disabled {
+
+            background-color: #ccc;
+
+        }
+        #abortBtn {
+            background-color: #dc3545; /* Red for Abort */
+        }
+        
+        #newUploadBtn {
+            background-color: #28a745; /* Green for Upload New */
+        }        
+
+        .download-link {
+
+            margin-top: 30px;
+
+            display: none;
+
+        }
+
+        .footer {
+
+            text-align: center;
+
+            margin-top: 50px;
+
+            color: #888;
+
+            font-size: 14px;
+
+        }
+
+        .loading {
+
+            display: none;
+
+            margin-top: 20px;
+
+        }
+
+        .error-message {
+
+            color: red;
+
+            font-weight: bold;
+
+            margin-top: 20px;
+
+        }
+</style>
+</head>
+<body>
+<header>
+
+        Crown Commercial Service
+</header>
+ 
+    <div class="container">
+<h2>Upload Your Document</h2>
+<input type="file" id="fileInput" accept=".docx,.odt">
+<br>
+<button id="uploadBtn" disabled>Submit</button>
+<!-- New Abort Button (Hidden initially) -->
+<button id="abortBtn" style="display:none; background-color: #dc3545;">Abort</button>
+
+<!-- New Upload Another Document Button (Hidden initially) -->
+<button id="newUploadBtn" style="display:none;">Upload Another Document</button>
+
+ 
+        <div class="loading" id="loadingSpinner">
+<img src="https://i.gifer.com/ZZ5H.gif" alt="Processing..." width="50">
+<p>Processing your document...</p>
+</div>
+ 
+        <div class="download-link" id="downloadSection">
+<p><strong>Your formatted document and audit report are ready:</strong></p>
+<a id="formattedDownloadLink" href="#" download>
+<button>Download Formatted Document</button>
+</a>
+<br><br>
+<a id="auditDownloadLink" href="#" download>
+<button>Download Audit Report</button>
+</a>
+</div>
+ 
+        <div class="error-message" id="errorMessage"></div>
+</div>
+ 
+    <div class="footer">
+&copy; Crown Commercial Service 2025
+</div>
+ 
+    <script>
+
+        const fileInput = document.getElementById("fileInput");
+        const uploadBtn = document.getElementById("uploadBtn");
+        const abortBtn = document.getElementById("abortBtn");
+        const newUploadBtn = document.getElementById("newUploadBtn");
+        const loadingSpinner = document.getElementById("loadingSpinner");
+        const downloadSection = document.getElementById("downloadSection");
+        const formattedDownloadLink = document.getElementById("formattedDownloadLink");
+        const auditDownloadLink = document.getElementById("auditDownloadLink");
+        const errorMessage = document.getElementById("errorMessage");
+
+        let controller = null; // New: controller to allow abort
+
+        let isUploading = false; // Track uploading state
+        
+        fileInput.addEventListener("change", () => {
+            uploadBtn.disabled = !fileInput.files.length;
+        });
+        
+        uploadBtn.addEventListener("click", () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+        
+            const formData = new FormData();
+            formData.append("document", file);
+        
+            loadingSpinner.style.display = "block";
+            uploadBtn.style.display = "none";   // Hide Submit
+            abortBtn.style.display = "inline-block"; // Show Abort
+            newUploadBtn.style.display = "none"; // Hide Upload Another
+            downloadSection.style.display = "none";
+            errorMessage.textContent = "";
+            isUploading = true;
+        
+            controller = new AbortController();
+            const signal = controller.signal;
+            
+            fetch("/upload", {
+                method: "POST",
+                body: formData,
+                signal: signal
+            })
+            
+            .then(async res => {
+                const contentType = res.headers.get("Content-Type") || "";
+                if (contentType.includes("application/json")) {
+                  return res.json();
+                } else {
+                  const text = await res.text();
+                  throw new Error("Server returned non-JSON response: " + text.slice(0, 100));
+                }
+              })
+              
+              .then(data => {
+                if (data.success && data.job_id) {
+                    // Start polling for status
+                    pollStatus(data.job_id);
+                } else {
+                    loadingSpinner.style.display = "none";
+                    abortBtn.style.display = "none";
+                    newUploadBtn.style.display = "inline-block";
+                    isUploading = false;
+                    showErrorPage(data.message || "Upload failed.");
+                }
+            })
+            
+            .catch(err => {
+                loadingSpinner.style.display = "none";
+                abortBtn.style.display = "none";
+                newUploadBtn.style.display = "inline-block";
+                isUploading = false;
+                showErrorPage("An unexpected error occurred: " + err.message);
+            });
+        });
+        
+        abortBtn.addEventListener("click", () => {
+            if (isUploading && controller) {
+                controller.abort(); // abort the request
+                loadingSpinner.style.display = "none";
+                abortBtn.style.display = "none";
+                uploadBtn.style.display = "inline-block";
+                newUploadBtn.style.display = "inline-block";
+                errorMessage.textContent = "❌ Upload aborted. Please upload again.";
+                isUploading = false;
+            }
+        });
+        
+        newUploadBtn.addEventListener("click", () => {
+            location.reload();
+        });
+        
+        function showErrorPage(message) {
+            document.body.innerHTML = `
+            <div style="text-align: center; padding: 80px;">
+                <h2 style="color: red;">Something went wrong</h2>
+                <p>${message}</p>
+                <button onclick="location.href='/'">Go Back Home</button>
+            </div>
+            `;
+        }
+        function pollStatus(jobId) {
+            const interval = setInterval(() => {
+                fetch(`/status/${jobId}`)
+                    .then(async res => {
+                        const contentType = res.headers.get("Content-Type") || "";
+                        if (contentType.includes("application/json")) {
+                            return res.json();
+                        } else {
+                            const text = await res.text();
+                            throw new Error("Non-JSON status response: " + text.slice(0, 100));
+                        }
+                    })
+                    .then(data => {
+                        if (data.status === "done") {
+                            clearInterval(interval);
+                            formattedDownloadLink.href = data.formattedDocumentUrl;
+                            auditDownloadLink.href = data.auditReportUrl;
+                            downloadSection.style.display = "block";
+                            loadingSpinner.style.display = "none";
+                            abortBtn.style.display = "none";
+                            newUploadBtn.style.display = "inline-block";
+                            isUploading = false;
+                        } else if (data.status === "error") {
+                            clearInterval(interval);
+                            loadingSpinner.style.display = "none";
+                            abortBtn.style.display = "none";
+                            newUploadBtn.style.display = "inline-block";
+                            isUploading = false;
+                            showErrorPage("Processing failed: " + data.message);
+                        }
+                        // else still processing — do nothing
+                    })
+                    .catch(err => {
+                        clearInterval(interval);
+                        loadingSpinner.style.display = "none";
+                        abortBtn.style.display = "none";
+                        newUploadBtn.style.display = "inline-block";
+                        isUploading = false;
+                        showErrorPage("Status check failed: " + err.message);
+                    });
+            }, 3000); // Poll every 3 seconds
+        }
+        
+        
+</script>
+</body>
+</html>
+
+ 
