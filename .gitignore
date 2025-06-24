@@ -1,1 +1,5 @@
 .env
+*__pycache__**
+backend/audit_reports/*
+backend/formatted_docs/*
+backend/uploads/*
