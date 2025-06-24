@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 # ✅ Correct import for the actual util
 
 import os
+from dotenv import load_dotenv
 
 # Load from environment
+load_dotenv()
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 AZURE_STORAGE_CONTAINER_NAME =  os.getenv("AZURE_STORAGE_CONTAINER_NAME")
 
